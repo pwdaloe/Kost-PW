@@ -1,0 +1,63 @@
+services:
+
+  # ─── PHP + Apache ───────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kostpw_web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./kostan:/var/www/html
+    environment:
+      DB_HOST: db
+      DB_NAME: kostan_pw
+      DB_USER: kostan_user
+      DB_PASS: kostan_pass
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── MySQL 8.0 ──────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: kostpw_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: kostan_pw
+      MYSQL_USER: kostan_user
+      MYSQL_PASSWORD: kostan_pass
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./kostan/config/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "kostan_user", "-pkostan_pass"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ─── phpMyAdmin ─────────────────────────────────────────────────────────────
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: kostpw_pma
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: kostan_user
+      PMA_PASSWORD: kostan_pass
+      UPLOAD_LIMIT: 64M
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

@@ -1,0 +1,124 @@
+/* ─── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  width: 220px;
+  min-height: calc(100vh - 56px);
+  background: #1a2332;
+  flex-shrink: 0;
+}
+
+.sidebar .nav-link {
+  color: rgba(255, 255, 255, .65);
+  border-radius: 6px;
+  padding: .5rem .75rem;
+  font-size: .9rem;
+  transition: background .15s, color .15s;
+}
+
+.sidebar .nav-link:hover {
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+}
+
+.sidebar .nav-link.active {
+  background: #1a56db;
+  color: #fff;
+}
+
+/* Mobile offcanvas active state */
+.offcanvas .nav-link.active {
+  background: #1a56db;
+}
+
+/* ─── Main Content ────────────────────────────────────────────────────────── */
+
+.main-content {
+  background: #f0f2f5;
+  min-height: calc(100vh - 56px);
+}
+
+/* ─── Cards ───────────────────────────────────────────────────────────────── */
+
+.card {
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .07);
+}
+
+.card-header {
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  font-weight: 600;
+  border-radius: 10px 10px 0 0 !important;
+}
+
+/* ─── Stat Cards (Dashboard) ──────────────────────────────────────────────── */
+
+.stat-card {
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.stat-card .stat-icon {
+  font-size: 2rem;
+  opacity: .85;
+}
+
+.stat-card .stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-card .stat-label {
+  font-size: .8rem;
+  opacity: .85;
+  margin-top: .2rem;
+}
+
+/* ─── Tables ──────────────────────────────────────────────────────────────── */
+
+.table thead th {
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: #6c757d;
+  background: #fafafa;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.table tbody tr:hover {
+  background: #f8f9ff;
+}
+
+/* ─── Badges ──────────────────────────────────────────────────────────────── */
+
+.badge-status-tersedia  { background: #d1fae5; color: #065f46; }
+.badge-status-terisi    { background: #fee2e2; color: #991b1b; }
+.badge-status-aktif     { background: #dbeafe; color: #1e40af; }
+.badge-status-keluar    { background: #f3f4f6; color: #374151; }
+.badge-status-waitlist  { background: #fef3c7; color: #92400e; }
+.badge-status-survey    { background: #e0e7ff; color: #3730a3; }
+.badge-status-approved  { background: #d1fae5; color: #065f46; }
+.badge-status-rejected  { background: #fee2e2; color: #991b1b; }
+.badge-status-unpaid    { background: #fee2e2; color: #991b1b; }
+.badge-status-paid      { background: #d1fae5; color: #065f46; }
+.badge-status-pending   { background: #fef3c7; color: #92400e; }
+.badge-status-sent      { background: #dbeafe; color: #1e40af; }
+
+.badge-status {
+  display: inline-block;
+  padding: .25em .6em;
+  font-size: .78em;
+  font-weight: 600;
+  border-radius: 5px;
+}
+
+/* ─── Utility ─────────────────────────────────────────────────────────────── */
+
+.cursor-pointer { cursor: pointer; }
+.fs-7 { font-size: .82rem; }

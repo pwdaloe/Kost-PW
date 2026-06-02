@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+.AppleDouble
+**/.DS_Store
+
+# Database credentials — salin dari db.example.php
+kostan/config/db.php
+
+# Aset biner yang diupload manual (tidak di-commit)
+kostan/assets/logo.png
+kostan/assets/Logo.png
+kostan/assets/kamar/*.jpg
+kostan/assets/kamar/*.jpeg
+kostan/assets/kamar/*.png
+kostan/assets/kamar/*.webp
+
+# Script setup sekali pakai (hapus setelah deploy)
+kostan/setup.php
+
+# Docker runtime
+mysql_data/
