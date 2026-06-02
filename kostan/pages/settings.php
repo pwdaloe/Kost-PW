@@ -22,7 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Simpan template WA
     if ($action === 'save_template') {
-        $tipe = in_array($_POST['tipe'] ?? '', ['tagihan','reminder']) ? $_POST['tipe'] : 'tagihan';
+        $tipe = in_array($_POST['tipe'] ?? '', ['tagihan','reminder','kamar_kosong'])
+                ? $_POST['tipe'] : 'tagihan';
         $teks = $_POST['template_text'] ?? '';
         dbExecute('INSERT INTO wa_templates (tipe, template_text) VALUES (?,?)
                    ON DUPLICATE KEY UPDATE template_text=?', [$tipe, $teks, $teks]);
@@ -57,8 +58,9 @@ $s = [];
 $rows = dbFetchAll('SELECT key_name, value FROM settings');
 foreach ($rows as $r) $s[$r['key_name']] = $r['value'];
 
-$tplTagihan  = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="tagihan"');
-$tplReminder = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="reminder"');
+$tplTagihan    = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="tagihan"');
+$tplReminder   = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="reminder"');
+$tplKamarKosong = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="kamar_kosong"');
 
 require __DIR__ . '/../includes/header.php';
 ?>
@@ -195,7 +197,7 @@ require __DIR__ . '/../includes/header.php';
   <!-- ─── Template WA Reminder ────────────────────────────────────────────── -->
   <div class="col-lg-6">
     <div class="card">
-      <div class="card-header"><i class="bi bi-whatsapp text-warning me-2"></i>Template WA — Reminder</div>
+      <div class="card-header"><i class="bi bi-whatsapp text-warning me-2"></i>Template WA — Reminder Tagihan</div>
       <div class="card-body">
         <form method="POST">
           <input type="hidden" name="action" value="save_template">
@@ -206,6 +208,57 @@ require __DIR__ . '/../includes/header.php';
             <i class="bi bi-save me-1"></i>Simpan Template Reminder
           </button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Template WA Kamar Kosong ────────────────────────────────────────── -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-door-open-fill text-primary me-2"></i>Template WA — Kamar Kosong
+        <span class="badge bg-primary ms-2 fs-7">Kandidat Waitlist</span>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="save_template">
+          <input type="hidden" name="tipe"   value="kamar_kosong">
+          <textarea name="template_text" class="form-control font-monospace"
+                    rows="16" style="font-size:.82rem"><?= h($tplKamarKosong['template_text'] ?? '') ?></textarea>
+          <button type="submit" class="btn btn-primary mt-3">
+            <i class="bi bi-save me-1"></i>Simpan Template Kamar Kosong
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Variabel template kamar_kosong ──────────────────────────────────── -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-info-circle me-2"></i>Variabel Template — Kamar Kosong</div>
+      <div class="card-body">
+        <div class="row g-2 fs-7">
+          <?php
+          $varsKamar = [
+            '{{nama}}'   => 'Nama kandidat',
+            '{{kamar}}'  => 'Nama kamar (Aurelia, Bella, dst)',
+            '{{ukuran}}' => 'Ukuran kamar (3x3.8m)',
+            '{{harga}}'  => 'Harga sewa (Rp X.XXX.XXX)',
+          ];
+          foreach ($varsKamar as $var => $desc): ?>
+          <div class="col-12 d-flex align-items-start gap-2">
+            <code class="text-primary flex-shrink-0"><?= h($var) ?></code>
+            <span class="text-muted"><?= $desc ?></span>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <hr class="my-3">
+        <p class="text-muted fs-7 mb-0">
+          Template ini digunakan saat admin mengirim notifikasi
+          kamar tersedia ke kandidat di halaman
+          <a href="/pages/candidates.php">Kandidat</a>.
+        </p>
       </div>
     </div>
   </div>

@@ -86,7 +86,28 @@ $candidates = dbFetchAll("
     FIELD(status,'waitlist','survey','approved','rejected'), created_at DESC
 ", $params);
 
-$rooms = dbFetchAll('SELECT nomor_kamar FROM rooms ORDER BY nomor_kamar');
+$rooms       = dbFetchAll('SELECT id, nomor_kamar, ukuran, harga_sewa, status FROM rooms ORDER BY nomor_kamar');
+$roomsTersedia = array_filter($rooms, fn($r) => $r['status'] === 'tersedia');
+
+// Kamar dipilih untuk panel notifikasi
+$notifRoomId = (int)($_GET['notif_room'] ?? 0);
+$notifRoom   = $notifRoomId
+    ? dbFetchOne('SELECT id, nomor_kamar, ukuran, harga_sewa FROM rooms WHERE id=?', [$notifRoomId])
+    : null;
+
+// Kandidat waitlist yang cocok: diminati = kamar ini ATAU belum ada preferensi
+$kandidatNotif = [];
+if ($notifRoom) {
+    $kandidatNotif = dbFetchAll("
+        SELECT id, nama, no_wa, kamar_diminati
+        FROM candidates
+        WHERE status = 'waitlist'
+          AND (kamar_diminati = ? OR kamar_diminati IS NULL OR kamar_diminati = '')
+        ORDER BY
+          CASE WHEN kamar_diminati = ? THEN 0 ELSE 1 END,
+          created_at ASC
+    ", [$notifRoom['nomor_kamar'], $notifRoom['nomor_kamar']]);
+}
 
 // Hitung per status untuk badge
 $counts = dbFetchAll('SELECT status, COUNT(*) AS n FROM candidates GROUP BY status');
@@ -118,10 +139,87 @@ require __DIR__ . '/../includes/header.php';
     </a>
     <?php endforeach; ?>
   </div>
-  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalCand" onclick="resetForm()">
-    <i class="bi bi-plus-lg me-1"></i>Tambah Kandidat
-  </button>
+  <div class="d-flex gap-2">
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalNotifKamar">
+      <i class="bi bi-door-open-fill me-1"></i>Notifikasi Kamar Kosong
+    </button>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalCand" onclick="resetForm()">
+      <i class="bi bi-plus-lg me-1"></i>Tambah Kandidat
+    </button>
+  </div>
 </div>
+
+<!-- Panel notifikasi aktif (jika kamar dipilih) -->
+<?php if ($notifRoom): ?>
+<div class="card mb-3 border-success">
+  <div class="card-header bg-success bg-opacity-10 d-flex align-items-center justify-content-between">
+    <div>
+      <i class="bi bi-door-open-fill text-success me-2"></i>
+      <strong>Mode Notifikasi:</strong> Kamar <?= h($notifRoom['nomor_kamar']) ?>
+      <?php if ($notifRoom['ukuran']): ?>
+        <span class="text-muted fs-7 ms-1">(<?= h($notifRoom['ukuran']) ?>)</span>
+      <?php endif; ?>
+      <?php if ($notifRoom['harga_sewa']): ?>
+        <span class="text-success fw-semibold ms-2"><?= formatRupiah((int)$notifRoom['harga_sewa']) ?>/bln</span>
+      <?php endif; ?>
+    </div>
+    <a href="?status=<?= h($filterStatus) ?>" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-x me-1"></i>Tutup Mode Ini
+    </a>
+  </div>
+  <div class="card-body p-0">
+    <?php if ($kandidatNotif): ?>
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr>
+          <th class="ps-3">Nama</th>
+          <th>No. WA</th>
+          <th>Kamar Diminati</th>
+          <th>Daftar Sejak</th>
+          <th class="pe-3 text-end">Kirim WA</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($kandidatNotif as $k): ?>
+        <tr>
+          <td class="ps-3 fw-semibold"><?= h($k['nama']) ?></td>
+          <td class="fs-7">
+            <?= '62' . ltrim(preg_replace('/[^0-9]/', '', $k['no_wa']), '0') ?>
+          </td>
+          <td>
+            <?php if ($k['kamar_diminati'] === $notifRoom['nomor_kamar']): ?>
+              <span class="badge-status badge-status-aktif">
+                <i class="bi bi-star-fill me-1"></i><?= h($k['kamar_diminati']) ?>
+              </span>
+            <?php else: ?>
+              <span class="text-muted fs-7">Tidak spesifik</span>
+            <?php endif; ?>
+          </td>
+          <td class="fs-7 text-muted"><?= formatTanggal(substr($k['created_at'] ?? '', 0, 10)) ?></td>
+          <td class="pe-3 text-end">
+            <button class="btn btn-sm btn-success"
+                    id="notif-btn-<?= $k['id'] ?>"
+                    onclick="kirimNotifKamar(<?= $k['id'] ?>, <?= $notifRoom['id'] ?>, this)">
+              <i class="bi bi-whatsapp me-1"></i>Kirim WA
+            </button>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <div class="px-3 py-2 fs-7 text-muted border-top">
+      <i class="bi bi-info-circle me-1"></i>
+      <?= count($kandidatNotif) ?> kandidat — yang spesifik minta kamar ini ditampilkan pertama.
+      Klik "Kirim WA" satu per satu.
+    </div>
+    <?php else: ?>
+      <p class="text-muted text-center py-4 mb-0 fs-7">
+        Tidak ada kandidat waitlist yang cocok untuk kamar ini.
+      </p>
+    <?php endif; ?>
+  </div>
+</div>
+<?php endif; ?>
 
 <!-- Pipeline info -->
 <div class="d-flex gap-2 mb-3 fs-7 flex-wrap">
@@ -270,6 +368,57 @@ require __DIR__ . '/../includes/header.php';
   </div>
 </div>
 
+<!-- ─── Modal Pilih Kamar untuk Notifikasi ────────────────────────────────── -->
+<div class="modal fade" id="modalNotifKamar" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-door-open-fill text-success me-2"></i>Notifikasi Kamar Kosong
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted fs-7 mb-3">
+          Pilih kamar yang tersedia. Sistem akan menampilkan kandidat waitlist
+          yang cocok untuk dikirimi pesan WA.
+        </p>
+        <label class="form-label fw-semibold">Pilih Kamar</label>
+        <div class="row g-2">
+          <?php foreach ($rooms as $r): ?>
+          <div class="col-6">
+            <a href="?notif_room=<?= $r['id'] ?>&status=<?= h($filterStatus) ?>"
+               class="card text-decoration-none h-100 <?= $notifRoomId===$r['id'] ? 'border-success' : '' ?>"
+               data-bs-dismiss="modal"
+               style="border-radius:8px; transition: border-color .15s">
+              <div class="card-body py-2 px-3">
+                <div class="fw-semibold"><?= h($r['nomor_kamar']) ?></div>
+                <?php if ($r['ukuran']): ?>
+                  <div class="text-muted fs-7"><?= h($r['ukuran']) ?></div>
+                <?php endif; ?>
+                <span class="badge <?= $r['status']==='tersedia' ? 'bg-success' : 'bg-secondary' ?> rounded-pill mt-1"
+                      style="font-size:.65rem">
+                  <?= $r['status']==='tersedia' ? 'Tersedia' : 'Terisi' ?>
+                </span>
+              </div>
+            </a>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <?php if (!$roomsTersedia): ?>
+        <div class="alert alert-warning mt-3 py-2 mb-0 fs-7">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Semua kamar sedang terisi. Notifikasi tetap bisa dikirim untuk kamar manapun.
+        </div>
+        <?php endif; ?>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <?php require __DIR__ . '/../includes/footer.php'; ?>
 
 <script>
@@ -293,5 +442,27 @@ function editCand(c) {
   document.getElementById('fStatus').value   = c.status;
   document.getElementById('fCatatan').value  = c.catatan ?? '';
   new bootstrap.Modal(document.getElementById('modalCand')).show();
+}
+
+async function kirimNotifKamar(candidateId, roomId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  try {
+    const res  = await fetch(`/api/generate_wa_kamar.php?candidate_id=${candidateId}&room_id=${roomId}`);
+    const data = await res.json();
+    if (data.url) {
+      window.open(data.url, '_blank');
+      btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Terkirim';
+      btn.classList.replace('btn-success', 'btn-outline-success');
+    } else {
+      alert('Error: ' + (data.error ?? 'Gagal generate WA'));
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-whatsapp me-1"></i>Kirim WA';
+    }
+  } catch(e) {
+    alert('Gagal menghubungi server.');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-whatsapp me-1"></i>Kirim WA';
+  }
 }
 </script>

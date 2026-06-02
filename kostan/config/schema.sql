@@ -158,7 +158,28 @@ Mengingatkan kembali, tagihan kost bulan *{{bulan}}* sebesar *{{total}}* sudah j
 Jika sudah transfer, mohon abaikan pesan ini ya Kak 🙏
 
 Jika belum, ditunggu konfirmasinya.
-Terima kasih 🙏');
+Terima kasih 🙏'),
+
+('kamar_kosong',
+'Halo Kak *{{nama}}* 👋
+
+Kabar gembira! Ada kamar yang tersedia di *Kost PW Balai Pustaka*.
+
+🏠 Kamar   : *{{kamar}}*
+📐 Ukuran  : {{ukuran}}
+💰 Harga   : {{harga}} / bulan
+
+Fasilitas:
+✅ AC Sharp 0.5 PK
+✅ Kasur, bantal & sprei
+✅ Lemari + meja rias
+✅ Kamar mandi dalam
+✅ Water heater Ariston
+✅ WiFi Biznet 300 Mbps
+✅ Listrik token mandiri
+
+Jika tertarik, segera balas pesan ini ya Kak 🙏
+Tempat terbatas!');
 
 -- ─── Tabel: expenses ──────────────────────────────────────────────────────────
 
