@@ -14,11 +14,33 @@ SET time_zone = '+07:00';
 CREATE TABLE IF NOT EXISTS admin (
   id       INT AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(50)  NOT NULL UNIQUE,
+  email    VARCHAR(100) DEFAULT NULL,
   password VARCHAR(255) NOT NULL
 );
 
-INSERT INTO admin (username, password) VALUES
-  ('admin', '$2y$10$placeholder.ganti.dengan.hash.asli.dari.php');
+INSERT INTO admin (username, email, password) VALUES
+  ('admin', 'purwandaru.w@gmail.com', '$2y$10$placeholder.ganti.dengan.hash.asli.dari.php');
+
+-- ─── Tabel: login_attempts ────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  ip_address   VARCHAR(45)  NOT NULL,
+  attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_ip_time (ip_address, attempted_at)
+);
+
+-- ─── Tabel: password_resets ───────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  admin_id   INT         NOT NULL,
+  token      VARCHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME    NOT NULL,
+  used       TINYINT     DEFAULT 0,
+  created_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (admin_id) REFERENCES admin(id) ON DELETE CASCADE
+);
 
 -- ─── Tabel: rooms ─────────────────────────────────────────────────────────────
 
