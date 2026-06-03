@@ -106,9 +106,10 @@ CREATE TABLE IF NOT EXISTS bills (
   sewa                 INT          NOT NULL,
   lainnya              INT          DEFAULT 0,
   keterangan_lainnya   VARCHAR(255) DEFAULT NULL,
+  paid_amount          INT          NOT NULL DEFAULT 0,
   total                INT GENERATED ALWAYS AS (sewa + lainnya) STORED,
   tgl_jatuh_tempo      DATE         NOT NULL,
-  status_bayar         ENUM('unpaid','paid') DEFAULT 'unpaid',
+  status_bayar         ENUM('unpaid','partial','paid') DEFAULT 'unpaid',
   tgl_bayar            DATE         DEFAULT NULL,
   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_tenant_bulan (tenant_id, bulan),
@@ -181,6 +182,18 @@ Jika sudah transfer, mohon abaikan pesan ini ya Kak 🙏
 
 Jika belum, ditunggu konfirmasinya.
 Terima kasih 🙏'),
+
+('reminder_partial',
+'Halo Kak *{{nama}}* 😊
+
+Mengingatkan bahwa tagihan kost bulan *{{bulan}}* untuk Kamar *{{kamar}}* belum terbayar penuh.
+
+💰 Total Tagihan  : *{{total}}*
+✅ Sudah Dibayar  : {{paid_amount}}
+⏳ Sisa           : *{{sisa}}*
+
+Mohon segera lunasi sisa pembayaran ya Kak 🙏
+Terima kasih!'),
 
 ('kamar_kosong',
 'Halo Kak *{{nama}}* 👋

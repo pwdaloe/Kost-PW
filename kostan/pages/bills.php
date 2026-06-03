@@ -59,15 +59,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = ['type' => 'success', 'msg' => 'Tagihan berhasil diperbarui.'];
     }
 
-    // Hapus tagihan (hanya jika belum lunas)
+    // Hapus tagihan (hanya jika unpaid dan belum ada pembayaran)
     if ($action === 'delete_bill') {
         $id   = (int)($_POST['id'] ?? 0);
-        $bill = dbFetchOne('SELECT status_bayar FROM bills WHERE id=?', [$id]);
-        if ($bill && $bill['status_bayar'] === 'unpaid') {
+        $bill = dbFetchOne('SELECT status_bayar, paid_amount FROM bills WHERE id=?', [$id]);
+        if ($bill && $bill['status_bayar'] === 'unpaid' && (int)$bill['paid_amount'] === 0) {
             dbExecute('DELETE FROM bills WHERE id=?', [$id]);
             $flash = ['type' => 'success', 'msg' => 'Tagihan berhasil dihapus.'];
         } else {
-            $flash = ['type' => 'danger', 'msg' => 'Tagihan yang sudah lunas tidak bisa dihapus.'];
+            $flash = ['type' => 'danger', 'msg' => 'Tagihan yang sudah ada pembayaran tidak bisa dihapus.'];
         }
     }
 }
@@ -85,7 +85,8 @@ $bulanSql = $bulanFilter . '-01';
 // Bills
 $where  = ['b.bulan = ?'];
 $params = [$bulanSql];
-if ($statusFilter === 'unpaid')  { $where[] = 'b.status_bayar = "unpaid"'; }
+// "unpaid" filter mencakup partial juga (belum lunas penuh)
+if ($statusFilter === 'unpaid')  { $where[] = 'b.status_bayar IN ("unpaid","partial")'; }
 if ($statusFilter === 'paid')    { $where[] = 'b.status_bayar = "paid"'; }
 if ($tenantFilter)               { $where[] = 'b.tenant_id = ?'; $params[] = $tenantFilter; }
 
@@ -97,8 +98,22 @@ $bills = dbFetchAll('
     JOIN rooms   r ON t.kamar_id  = r.id
     LEFT JOIN wa_queue wq ON wq.bill_id = b.id AND wq.tipe = "tagihan"
     WHERE ' . implode(' AND ', $where) . '
-    ORDER BY b.status_bayar ASC, b.tgl_jatuh_tempo ASC, t.nama ASC
+    ORDER BY FIELD(b.status_bayar,"partial","unpaid","paid"), b.tgl_jatuh_tempo ASC, t.nama ASC
 ', $params);
+
+// Payment history untuk semua bill yang ditampilkan
+$billIds = array_column($bills, 'id');
+$allPayments = [];
+if ($billIds) {
+    $placeholders = implode(',', array_fill(0, count($billIds), '?'));
+    $payRows = dbFetchAll("
+        SELECT * FROM payments WHERE bill_id IN ($placeholders)
+        ORDER BY tgl_bayar ASC, id ASC
+    ", $billIds);
+    foreach ($payRows as $p) {
+        $allPayments[$p['bill_id']][] = $p;
+    }
+}
 
 // WA Queue
 $waQueue = dbFetchAll('
@@ -110,13 +125,15 @@ $waQueue = dbFetchAll('
     ORDER BY wq.status ASC, wq.created_at DESC
 ');
 
-// Ringkasan bulan ini
+// Ringkasan bulan ini — partial masuk hitungan belum bayar
 $summary = dbFetchOne('
     SELECT COUNT(*) AS total,
-           SUM(status_bayar="unpaid") AS unpaid,
-           SUM(status_bayar="paid")   AS paid,
-           COALESCE(SUM(total), 0)    AS total_nominal,
-           COALESCE(SUM(CASE WHEN status_bayar="paid" THEN total END), 0) AS nominal_masuk
+           SUM(status_bayar IN ("unpaid","partial")) AS unpaid,
+           SUM(status_bayar="partial")               AS partial,
+           SUM(status_bayar="paid")                  AS paid,
+           COALESCE(SUM(total), 0)                   AS total_nominal,
+           COALESCE(SUM(CASE WHEN status_bayar="paid" THEN total END), 0)        AS nominal_masuk,
+           COALESCE(SUM(CASE WHEN status_bayar="partial" THEN paid_amount END),0) AS nominal_partial
     FROM bills WHERE bulan = ?
 ', [$bulanSql]);
 
@@ -139,10 +156,10 @@ require __DIR__ . '/../includes/header.php';
     <input type="month" name="bulan" value="<?= h($bulanFilter) ?>"
            class="form-control form-control-sm" style="width:150px"
            onchange="this.form.submit()">
-    <select name="status" class="form-select form-select-sm" style="width:130px"
+    <select name="status" class="form-select form-select-sm" style="width:150px"
             onchange="this.form.submit()">
       <option value="semua"  <?= $statusFilter==='semua'  ? 'selected':'' ?>>Semua</option>
-      <option value="unpaid" <?= $statusFilter==='unpaid' ? 'selected':'' ?>>Belum Bayar</option>
+      <option value="unpaid" <?= $statusFilter==='unpaid' ? 'selected':'' ?>>Belum Bayar + Parsial</option>
       <option value="paid"   <?= $statusFilter==='paid'   ? 'selected':'' ?>>Lunas</option>
     </select>
   </form>
@@ -168,7 +185,12 @@ require __DIR__ . '/../includes/header.php';
   <div class="col-6 col-md-3">
     <div class="card text-center py-2">
       <div class="fw-bold fs-5 text-danger"><?= (int)$summary['unpaid'] ?></div>
-      <div class="text-muted fs-7">Belum Bayar</div>
+      <div class="text-muted fs-7">
+        Belum Lunas
+        <?php if ((int)$summary['partial'] > 0): ?>
+          <span class="badge-status badge-status-partial ms-1"><?= (int)$summary['partial'] ?> parsial</span>
+        <?php endif; ?>
+      </div>
     </div>
   </div>
   <div class="col-6 col-md-3">
@@ -179,8 +201,15 @@ require __DIR__ . '/../includes/header.php';
   </div>
   <div class="col-6 col-md-3">
     <div class="card text-center py-2">
-      <div class="fw-bold fs-5 text-primary"><?= formatRupiah((int)$summary['nominal_masuk']) ?></div>
-      <div class="text-muted fs-7">Total Masuk</div>
+      <div class="fw-bold fs-5 text-primary">
+        <?= formatRupiah((int)$summary['nominal_masuk'] + (int)$summary['nominal_partial']) ?>
+      </div>
+      <div class="text-muted fs-7">
+        Total Masuk
+        <?php if ((int)$summary['nominal_partial'] > 0): ?>
+          <div class="fs-7 text-warning">(+<?= formatRupiah((int)$summary['nominal_partial']) ?> parsial)</div>
+        <?php endif; ?>
+      </div>
     </div>
   </div>
 </div>
@@ -293,10 +322,15 @@ require __DIR__ . '/../includes/header.php';
           <?php foreach ($bills as $b): ?>
           <?php
             $isHighlight = $b['id'] === $highlight;
+            $paidAmt     = (int)$b['paid_amount'];
+            $totalAmt    = (int)$b['total'];
+            $sisaAmt     = $totalAmt - $paidAmt;
+            $pct         = $totalAmt > 0 ? round($paidAmt / $totalAmt * 100) : 0;
             $hariTelat   = '';
-            if ($b['status_bayar'] === 'unpaid' && $b['tgl_jatuh_tempo'] < date('Y-m-d')) {
+            if (in_array($b['status_bayar'], ['unpaid','partial']) && $b['tgl_jatuh_tempo'] < date('Y-m-d')) {
                 $hariTelat = (int) floor((time() - strtotime($b['tgl_jatuh_tempo'])) / 86400);
             }
+            $bPayments   = $allPayments[$b['id']] ?? [];
           ?>
           <tr id="bill-<?= $b['id'] ?>" <?= $isHighlight ? 'class="table-warning"' : '' ?>>
             <td class="ps-3">
@@ -313,23 +347,37 @@ require __DIR__ . '/../includes/header.php';
                 <span class="text-muted">—</span>
               <?php endif; ?>
             </td>
-            <td class="fw-semibold fs-7"><?= formatRupiah((int)$b['total']) ?></td>
+            <td class="fw-semibold fs-7"><?= formatRupiah($totalAmt) ?></td>
             <td class="fs-7">
               <div><?= formatTanggal($b['tgl_jatuh_tempo']) ?></div>
               <?php if ($hariTelat !== ''): ?>
                 <span class="badge-status badge-status-unpaid"><?= $hariTelat ?>h telat</span>
               <?php endif; ?>
             </td>
-            <td>
+
+            <!-- Kolom Bayar: status + progress partial -->
+            <td style="min-width:130px">
               <?php if ($b['status_bayar'] === 'paid'): ?>
                 <span class="badge-status badge-status-paid">Lunas</span>
                 <?php if ($b['tgl_bayar']): ?>
                   <div class="text-muted fs-7"><?= formatTanggal($b['tgl_bayar']) ?></div>
                 <?php endif; ?>
+
+              <?php elseif ($b['status_bayar'] === 'partial'): ?>
+                <span class="badge-status badge-status-partial">Parsial</span>
+                <div class="progress mt-1 mb-1" style="height:5px" title="<?= $pct ?>% terbayar">
+                  <div class="progress-bar bg-warning" style="width:<?= $pct ?>%"></div>
+                </div>
+                <div class="fs-7 text-muted">
+                  <?= formatRupiah($paidAmt) ?> / <?= formatRupiah($totalAmt) ?>
+                </div>
+                <div class="fs-7 text-danger">Sisa <?= formatRupiah($sisaAmt) ?></div>
+
               <?php else: ?>
-                <span class="badge-status badge-status-unpaid">Belum</span>
+                <span class="badge-status badge-status-unpaid">Belum Bayar</span>
               <?php endif; ?>
             </td>
+
             <td>
               <?php if ($b['wa_status'] === 'sent'): ?>
                 <span class="badge-status badge-status-sent">Terkirim</span>
@@ -339,31 +387,42 @@ require __DIR__ . '/../includes/header.php';
                 <span class="text-muted fs-7">—</span>
               <?php endif; ?>
             </td>
+
             <td class="pe-3 text-end">
-              <div class="d-flex gap-1 justify-content-end">
+              <div class="d-flex gap-1 justify-content-end flex-wrap">
                 <!-- Kirim WA -->
                 <button class="btn btn-sm btn-success" id="wa-btn-<?= $b['id'] ?>"
-                        onclick="kirimWA(<?= $b['id'] ?>, this)"
-                        title="Kirim WA Tagihan">
+                        onclick="kirimWA(<?= $b['id'] ?>, this)" title="Kirim WA Tagihan">
                   <i class="bi bi-whatsapp"></i>
                 </button>
 
-                <?php if ($b['status_bayar'] === 'unpaid'): ?>
-                <!-- Tandai Lunas -->
+                <?php if ($b['status_bayar'] !== 'paid'): ?>
+                <!-- Catat Pembayaran -->
                 <button class="btn btn-sm btn-primary"
-                        onclick="showLunas(<?= $b['id'] ?>, <?= (int)$b['total'] ?>)"
-                        title="Tandai Lunas">
-                  <i class="bi bi-check-circle"></i>
+                        onclick="showBayar(<?= $b['id'] ?>, <?= $totalAmt ?>, <?= $paidAmt ?>)"
+                        title="Catat Pembayaran">
+                  <i class="bi bi-cash-coin"></i>
                 </button>
-                <!-- Edit (tambah biaya lainnya) -->
+                <?php endif; ?>
+
+                <!-- Histori pembayaran -->
+                <?php if ($bPayments): ?>
+                <button class="btn btn-sm btn-outline-info"
+                        onclick="showHistori(<?= $b['id'] ?>, '<?= h($b['nama']) ?>')"
+                        title="Histori Pembayaran">
+                  <i class="bi bi-clock-history"></i>
+                </button>
+                <?php endif; ?>
+
+                <?php if ($b['status_bayar'] === 'unpaid' && !$bPayments): ?>
+                <!-- Edit (hanya jika belum ada pembayaran) -->
                 <button class="btn btn-sm btn-outline-secondary"
                         onclick="editBill(<?= htmlspecialchars(json_encode($b), ENT_QUOTES) ?>)"
                         title="Edit Tagihan">
                   <i class="bi bi-pencil"></i>
                 </button>
                 <!-- Hapus -->
-                <form method="POST" class="d-inline"
-                      onsubmit="return confirm('Hapus tagihan ini?')">
+                <form method="POST" class="d-inline" onsubmit="return confirm('Hapus tagihan ini?')">
                   <input type="hidden" name="action" value="delete_bill">
                   <input type="hidden" name="id"     value="<?= $b['id'] ?>">
                   <button class="btn btn-sm btn-outline-danger" title="Hapus">
@@ -394,30 +453,53 @@ require __DIR__ . '/../includes/header.php';
 </div>
 <?php endif; ?>
 
-<!-- ─── Modal: Tandai Lunas ───────────────────────────────────────────────── -->
-<div class="modal fade" id="modalLunas" tabindex="-1">
+<!-- ─── Modal: Catat Pembayaran ───────────────────────────────────────────── -->
+<div class="modal fade" id="modalBayar" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title fw-bold">Tandai Lunas</h6>
+        <h6 class="modal-title fw-bold"><i class="bi bi-cash-coin me-2"></i>Catat Pembayaran</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <!-- Ringkasan tagihan -->
+        <div class="bg-light rounded p-3 mb-3 fs-7">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="text-muted">Total Tagihan</span>
+            <span class="fw-semibold" id="bTotal">—</span>
+          </div>
+          <div class="d-flex justify-content-between mb-1">
+            <span class="text-muted">Sudah Dibayar</span>
+            <span class="text-success fw-semibold" id="bSudahBayar">—</span>
+          </div>
+          <div class="d-flex justify-content-between border-top pt-1 mt-1">
+            <span class="fw-bold">Sisa</span>
+            <span class="fw-bold text-danger" id="bSisa">—</span>
+          </div>
+        </div>
+
         <div class="row g-3">
           <div class="col-12">
-            <label class="form-label fw-semibold">Tanggal Bayar</label>
-            <input type="date" id="lTglBayar" class="form-control" value="<?= date('Y-m-d') ?>">
-          </div>
-          <div class="col-12">
-            <label class="form-label fw-semibold">Nominal Diterima</label>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold mb-0">Jumlah Dibayar Sekarang</label>
+              <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fs-7"
+                      onclick="bayarPenuh()">Bayar Penuh</button>
+            </div>
             <div class="input-group">
               <span class="input-group-text text-muted">Rp</span>
-              <input type="text" id="lNominal" class="form-control" inputmode="numeric">
+              <input type="text" id="bNominal" class="form-control" inputmode="numeric"
+                     oninput="updatePreview()" placeholder="0">
             </div>
+            <!-- Preview status setelah bayar -->
+            <div id="bPreview" class="mt-2 fs-7 d-none"></div>
           </div>
-          <div class="col-12">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Tanggal Bayar</label>
+            <input type="date" id="bTglBayar" class="form-control" value="<?= date('Y-m-d') ?>">
+          </div>
+          <div class="col-md-6">
             <label class="form-label fw-semibold">Metode</label>
-            <select id="lMetode" class="form-select">
+            <select id="bMetode" class="form-select">
               <option value="transfer">Transfer Bank</option>
               <option value="qris">QRIS</option>
               <option value="tunai">Tunai</option>
@@ -425,19 +507,51 @@ require __DIR__ . '/../includes/header.php';
           </div>
           <div class="col-12">
             <label class="form-label fw-semibold">Catatan</label>
-            <input type="text" id="lCatatan" class="form-control" placeholder="Opsional">
+            <input type="text" id="bCatatan" class="form-control" placeholder="Opsional">
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-        <button type="button" class="btn btn-primary" id="btnLunas" onclick="submitLunas()">
-          <i class="bi bi-check-circle me-1"></i>Konfirmasi Lunas
+        <button type="button" class="btn btn-primary" id="btnBayar" onclick="submitBayar()">
+          <i class="bi bi-check-circle me-1"></i>Simpan Pembayaran
         </button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- ─── Modal: Histori Pembayaran ─────────────────────────────────────────── -->
+<div class="modal fade" id="modalHistori" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-clock-history me-2"></i>Histori Pembayaran — <span id="hNama"></span>
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th class="ps-3">Tanggal</th>
+              <th>Nominal</th>
+              <th>Metode</th>
+              <th class="pe-3">Catatan</th>
+            </tr>
+          </thead>
+          <tbody id="hBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Data histori semua payments (embed di halaman untuk akses JS) -->
+<script>
+const _allPayments = <?= json_encode($allPayments) ?>;
+</script>
 
 <!-- ─── Modal: Edit Tagihan ───────────────────────────────────────────────── -->
 <div class="modal fade" id="modalEditBill" tabindex="-1">
@@ -514,24 +628,68 @@ async function kirimWA(billId, btn) {
   }
 }
 
-// ── Tandai Lunas ─────────────────────────────────────────────────────────────
-function showLunas(billId, total) {
-  _activeBillId = billId;
-  document.getElementById('lNominal').value  = total;
-  document.getElementById('lTglBayar').value = new Date().toISOString().split('T')[0];
-  document.getElementById('lCatatan').value  = '';
-  new bootstrap.Modal(document.getElementById('modalLunas')).show();
+// ── Catat Pembayaran ─────────────────────────────────────────────────────────
+let _bTotal = 0, _bPaid = 0, _bSisa = 0;
+
+function formatRp(n) {
+  return 'Rp ' + parseInt(n).toLocaleString('id-ID');
 }
 
-async function submitLunas() {
-  const btn = document.getElementById('btnLunas');
+function showBayar(billId, total, paidAmt) {
+  _activeBillId = billId;
+  _bTotal = total;
+  _bPaid  = paidAmt;
+  _bSisa  = total - paidAmt;
+
+  document.getElementById('bTotal').textContent      = formatRp(total);
+  document.getElementById('bSudahBayar').textContent = formatRp(paidAmt);
+  document.getElementById('bSisa').textContent       = formatRp(_bSisa);
+  document.getElementById('bNominal').value          = _bSisa.toLocaleString('id-ID');
+  document.getElementById('bTglBayar').value         = new Date().toISOString().split('T')[0];
+  document.getElementById('bCatatan').value          = '';
+  document.getElementById('bPreview').classList.add('d-none');
+  updatePreview();
+  new bootstrap.Modal(document.getElementById('modalBayar')).show();
+}
+
+function bayarPenuh() {
+  document.getElementById('bNominal').value = _bSisa.toLocaleString('id-ID');
+  updatePreview();
+}
+
+function updatePreview() {
+  const raw = parseInt(document.getElementById('bNominal').value.replace(/\D/g,'')) || 0;
+  const prev = document.getElementById('bPreview');
+
+  if (raw <= 0) { prev.classList.add('d-none'); return; }
+
+  if (raw > _bSisa) {
+    prev.className = 'mt-2 fs-7 text-danger';
+    prev.textContent = '⚠️ Melebihi sisa tagihan (' + formatRp(_bSisa) + '). Overpayment tidak diizinkan.';
+  } else if (raw === _bSisa) {
+    prev.className = 'mt-2 fs-7 text-success fw-semibold';
+    prev.textContent = '✅ Tagihan akan menjadi LUNAS';
+  } else {
+    const sisaBaru = _bSisa - raw;
+    prev.className = 'mt-2 fs-7 text-warning fw-semibold';
+    prev.textContent = '⚠️ Tagihan akan menjadi PARSIAL · Sisa ' + formatRp(sisaBaru);
+  }
+  prev.classList.remove('d-none');
+}
+
+async function submitBayar() {
+  const nominal = parseInt(document.getElementById('bNominal').value.replace(/\D/g,'')) || 0;
+  if (nominal <= 0)      { alert('Masukkan jumlah pembayaran.'); return; }
+  if (nominal > _bSisa)  { alert('Jumlah melebihi sisa tagihan.'); return; }
+
+  const btn = document.getElementById('btnBayar');
   btn.disabled = true;
   const body = new FormData();
   body.append('bill_id',   _activeBillId);
-  body.append('tgl_bayar', document.getElementById('lTglBayar').value);
-  body.append('nominal',   document.getElementById('lNominal').value);
-  body.append('metode',    document.getElementById('lMetode').value);
-  body.append('catatan',   document.getElementById('lCatatan').value);
+  body.append('tgl_bayar', document.getElementById('bTglBayar').value);
+  body.append('nominal',   nominal);
+  body.append('metode',    document.getElementById('bMetode').value);
+  body.append('catatan',   document.getElementById('bCatatan').value);
 
   try {
     const res  = await fetch('/api/mark_paid.php', { method: 'POST', body });
@@ -546,6 +704,27 @@ async function submitLunas() {
     alert('Gagal menghubungi server.');
     btn.disabled = false;
   }
+}
+
+// ── Histori Pembayaran ────────────────────────────────────────────────────────
+const _metodeLabel = { transfer: 'Transfer', qris: 'QRIS', tunai: 'Tunai' };
+
+function showHistori(billId, nama) {
+  document.getElementById('hNama').textContent = nama;
+  const payments = _allPayments[billId] || [];
+  const body = document.getElementById('hBody');
+  if (!payments.length) {
+    body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3 ps-3">Belum ada pembayaran.</td></tr>';
+  } else {
+    body.innerHTML = payments.map(p => `
+      <tr>
+        <td class="ps-3 fs-7">${p.tgl_bayar}</td>
+        <td class="fw-semibold fs-7">${formatRp(p.nominal)}</td>
+        <td class="fs-7">${_metodeLabel[p.metode] ?? p.metode}</td>
+        <td class="pe-3 fs-7 text-muted">${p.catatan ?? '—'}</td>
+      </tr>`).join('');
+  }
+  new bootstrap.Modal(document.getElementById('modalHistori')).show();
 }
 
 // ── Edit Tagihan ─────────────────────────────────────────────────────────────

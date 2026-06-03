@@ -17,9 +17,10 @@ $rooms = dbFetchOne('
 ');
 
 $tagihanUnpaid = dbFetchOne('
-    SELECT COUNT(*) AS total, COALESCE(SUM(total), 0) AS nominal
+    SELECT COUNT(*) AS total, COALESCE(SUM(total), 0) AS nominal,
+           SUM(status_bayar = "partial") AS partial
     FROM bills
-    WHERE bulan = ? AND status_bayar = "unpaid"
+    WHERE bulan = ? AND status_bayar IN ("unpaid","partial")
 ', [$bulanIni]);
 
 $waQueuePending = dbFetchOne('
@@ -86,7 +87,14 @@ require __DIR__ . '/../includes/header.php';
     <div class="stat-card h-100" style="background:<?= (int)$tagihanUnpaid['total'] > 0 ? '#b91c1c' : '#065f46' ?>">
       <div>
         <div class="stat-value"><?= (int)$tagihanUnpaid['total'] ?></div>
-        <div class="stat-label">Tagihan Belum Bayar</div>
+        <div class="stat-label">
+          Tagihan Belum Lunas
+          <?php if ((int)$tagihanUnpaid['partial'] > 0): ?>
+            <div style="font-size:.7rem;opacity:.85;margin-top:2px">
+              <?= (int)$tagihanUnpaid['partial'] ?> parsial
+            </div>
+          <?php endif; ?>
+        </div>
       </div>
       <i class="bi bi-receipt stat-icon ms-auto"></i>
     </div>

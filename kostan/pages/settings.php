@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Simpan template WA
     if ($action === 'save_template') {
-        $tipe = in_array($_POST['tipe'] ?? '', ['tagihan','reminder','kamar_kosong'])
+        $tipe = in_array($_POST['tipe'] ?? '', ['tagihan','reminder','reminder_partial','kamar_kosong'])
                 ? $_POST['tipe'] : 'tagihan';
         $teks = $_POST['template_text'] ?? '';
         dbExecute('INSERT INTO wa_templates (tipe, template_text) VALUES (?,?)
@@ -58,9 +58,10 @@ $s = [];
 $rows = dbFetchAll('SELECT key_name, value FROM settings');
 foreach ($rows as $r) $s[$r['key_name']] = $r['value'];
 
-$tplTagihan    = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="tagihan"');
-$tplReminder   = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="reminder"');
-$tplKamarKosong = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="kamar_kosong"');
+$tplTagihan       = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="tagihan"');
+$tplReminder      = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="reminder"');
+$tplReminderParsial = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="reminder_partial"');
+$tplKamarKosong   = dbFetchOne('SELECT template_text FROM wa_templates WHERE tipe="kamar_kosong"');
 
 require __DIR__ . '/../includes/header.php';
 ?>
@@ -206,6 +207,31 @@ require __DIR__ . '/../includes/header.php';
                     rows="16" style="font-size:.82rem"><?= h($tplReminder['template_text'] ?? '') ?></textarea>
           <button type="submit" class="btn btn-warning mt-3">
             <i class="bi bi-save me-1"></i>Simpan Template Reminder
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Template WA Reminder Parsial ──────────────────────────────────────── -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-whatsapp text-warning me-2"></i>Template WA — Reminder Parsial
+        <span class="badge bg-warning text-dark ms-2 fs-7">Sudah bayar sebagian</span>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info py-2 fs-7 mb-3">
+          Digunakan saat H+1 jatuh tempo dan status tagihan masih <strong>Parsial</strong>.
+          Variabel tambahan: <code>{{paid_amount}}</code> <code>{{sisa}}</code> <code>{{kamar}}</code>
+        </div>
+        <form method="POST">
+          <input type="hidden" name="action" value="save_template">
+          <input type="hidden" name="tipe"   value="reminder_partial">
+          <textarea name="template_text" class="form-control font-monospace"
+                    rows="14" style="font-size:.82rem"><?= h($tplReminderParsial['template_text'] ?? '') ?></textarea>
+          <button type="submit" class="btn btn-warning mt-3">
+            <i class="bi bi-save me-1"></i>Simpan Template Reminder Parsial
           </button>
         </form>
       </div>

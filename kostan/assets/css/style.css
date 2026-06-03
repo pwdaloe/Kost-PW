@@ -106,6 +106,7 @@
 .badge-status-approved  { background: #d1fae5; color: #065f46; }
 .badge-status-rejected  { background: #fee2e2; color: #991b1b; }
 .badge-status-unpaid    { background: #fee2e2; color: #991b1b; }
+.badge-status-partial   { background: #fed7aa; color: #9a3412; }
 .badge-status-paid      { background: #d1fae5; color: #065f46; }
 .badge-status-pending   { background: #fef3c7; color: #92400e; }
 .badge-status-sent      { background: #dbeafe; color: #1e40af; }
